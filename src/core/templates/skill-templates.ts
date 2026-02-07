@@ -12,6 +12,9 @@ export interface SkillTemplate {
   name: string;
   description: string;
   instructions: string;
+  license?: string;
+  compatibility?: string;
+  metadata?: Record<string, string>;
 }
 
 /**
@@ -24,6 +27,8 @@ export function getExploreSkillTemplate(): SkillTemplate {
     description: 'Enter explore mode - a thinking partner for exploring ideas, investigating problems, and clarifying requirements. Use when the user wants to think through something before or during a change.',
     instructions: `Enter explore mode. Think deeply. Visualize freely. Follow the conversation wherever it goes.
 
+**IMPORTANT: Explore mode is for thinking, not implementing.** You may read files, search code, and investigate the codebase, but you must NEVER write code or implement features. If the user asks you to implement something, remind them to exit explore mode first (e.g., start a change with \`/opsx:new\` or \`/opsx:ff\`). You MAY create OpenSpec artifacts (proposals, designs, specs) if the user asks—that's capturing thinking, not implementing.
+
 **This is a stance, not a workflow.** There are no fixed steps, no required sequence, no mandatory outputs. You're a thinking partner helping the user explore.
 
 ---
@@ -31,6 +36,7 @@ export function getExploreSkillTemplate(): SkillTemplate {
 ## The Stance
 
 - **Curious, not prescriptive** - Ask questions that emerge naturally, don't follow a script
+- **Open threads, not interrogations** - Surface multiple interesting directions and let the user follow what resonates. Don't funnel them through a single path of questions.
 - **Visual** - Use ASCII diagrams liberally when they'd help clarify thinking
 - **Adaptive** - Follow interesting threads, pivot when new information emerges
 - **Patient** - Don't rush to conclusions, let the shape of the problem emerge
@@ -290,13 +296,17 @@ But this summary is optional. Sometimes the thinking IS the value.
 
 ## Guardrails
 
+- **Don't implement** - Never write code or implement features. Creating OpenSpec artifacts is fine, writing application code is not.
 - **Don't fake understanding** - If something is unclear, dig deeper
 - **Don't rush** - Discovery is thinking time, not task time
 - **Don't force structure** - Let patterns emerge naturally
 - **Don't auto-capture** - Offer to save insights, don't just do it
 - **Do visualize** - A good diagram is worth many paragraphs
 - **Do explore the codebase** - Ground discussions in reality
-- **Do question assumptions** - Including the user's and your own`
+- **Do question assumptions** - Including the user's and your own`,
+    license: 'MIT',
+    compatibility: 'Requires openspec CLI.',
+    metadata: { author: 'openspec', version: '1.0' },
   };
 }
 
@@ -328,7 +338,6 @@ export function getNewChangeSkillTemplate(): SkillTemplate {
    Use the default schema (omit \`--schema\`) unless the user explicitly requests a different workflow.
 
    **Use a different schema only if the user mentions:**
-   - "tdd" or "test-driven" → use \`--schema tdd\`
    - A specific schema name → use \`--schema <name>\`
    - "show workflows" or "what workflows" → run \`openspec schemas --json\` and let them choose
 
@@ -348,7 +357,7 @@ export function getNewChangeSkillTemplate(): SkillTemplate {
    This shows which artifacts need to be created and which are ready (dependencies satisfied).
 
 5. **Get instructions for the first artifact**
-   The first artifact depends on the schema (e.g., \`proposal\` for spec-driven, \`spec\` for tdd).
+   The first artifact depends on the schema (e.g., \`proposal\` for spec-driven).
    Check the status output to find the first artifact with status "ready".
    \`\`\`bash
    openspec instructions <first-artifact-id> --change "<name>"
@@ -371,7 +380,10 @@ After completing the steps, summarize:
 - Do NOT advance beyond showing the first artifact template
 - If the name is invalid (not kebab-case), ask for a valid name
 - If a change with that name already exists, suggest continuing that change instead
-- Pass --schema if using a non-default workflow`
+- Pass --schema if using a non-default workflow`,
+    license: 'MIT',
+    compatibility: 'Requires openspec CLI.',
+    metadata: { author: 'openspec', version: '1.0' },
   };
 }
 
@@ -385,7 +397,7 @@ export function getContinueChangeSkillTemplate(): SkillTemplate {
     description: 'Continue working on an OpenSpec change by creating the next artifact. Use when the user wants to progress their change, create the next artifact, or continue their workflow.',
     instructions: `Continue working on a change by creating the next artifact.
 
-**Input**: Optionally specify a change name. If omitted, MUST prompt for available changes.
+**Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
@@ -408,7 +420,7 @@ export function getContinueChangeSkillTemplate(): SkillTemplate {
    openspec status --change "<name>" --json
    \`\`\`
    Parse the JSON to understand current state. The response includes:
-   - \`schemaName\`: The workflow schema being used (e.g., "spec-driven", "tdd")
+   - \`schemaName\`: The workflow schema being used (e.g., "spec-driven")
    - \`artifacts\`: Array of artifacts with their status ("done", "ready", "blocked")
    - \`isComplete\`: Boolean indicating if all artifacts are complete
 
@@ -430,10 +442,17 @@ export function getContinueChangeSkillTemplate(): SkillTemplate {
      \`\`\`bash
      openspec instructions <artifact-id> --change "<name>" --json
      \`\`\`
-   - Parse the JSON to get template, dependencies, and what it unlocks
-   - **Create the artifact file** using the template as a starting point:
+   - Parse the JSON. The key fields are:
+     - \`context\`: Project background (constraints for you - do NOT include in output)
+     - \`rules\`: Artifact-specific rules (constraints for you - do NOT include in output)
+     - \`template\`: The structure to use for your output file
+     - \`instruction\`: Schema-specific guidance
+     - \`outputPath\`: Where to write the artifact
+     - \`dependencies\`: Completed artifacts to read for context
+   - **Create the artifact file**:
      - Read any completed dependency files for context
-     - Fill in the template based on context and user's goals
+     - Use \`template\` as the structure - fill in its sections
+     - Apply \`context\` and \`rules\` as constraints when writing - but do NOT copy them into the file
      - Write to the output path specified in instructions
    - Show what was created and what's now unlocked
    - STOP after creating ONE artifact
@@ -467,15 +486,9 @@ Common artifact patterns:
 **spec-driven schema** (proposal → specs → design → tasks):
 - **proposal.md**: Ask user about the change if not clear. Fill in Why, What Changes, Capabilities, Impact.
   - The Capabilities section is critical - each capability listed will need a spec file.
-- **specs/*.md**: Create one spec per capability listed in the proposal.
+- **specs/<capability>/spec.md**: Create one spec per capability listed in the proposal's Capabilities section (use the capability name, not the change name).
 - **design.md**: Document technical decisions, architecture, and implementation approach.
 - **tasks.md**: Break down implementation into checkboxed tasks.
-
-**tdd schema** (spec → tests → implementation → docs):
-- **spec.md**: Feature specification defining what to build.
-- **tests/*.test.ts**: Write tests BEFORE implementation (TDD red phase).
-- **src/*.ts**: Implement to make tests pass (TDD green phase).
-- **docs/*.md**: Document the implemented feature.
 
 For other schemas, follow the \`instruction\` field from the CLI output.
 
@@ -485,7 +498,13 @@ For other schemas, follow the \`instruction\` field from the CLI output.
 - Never skip artifacts or create out of order
 - If context is unclear, ask the user before creating
 - Verify the artifact file exists after writing before marking progress
-- Use the schema's artifact sequence, don't assume specific artifact names`
+- Use the schema's artifact sequence, don't assume specific artifact names
+- **IMPORTANT**: \`context\` and \`rules\` are constraints for YOU, not content for the file
+  - Do NOT copy \`<context>\`, \`<rules>\`, \`<project_context>\` blocks into the artifact
+  - These guide what you write, but should never appear in the output`,
+    license: 'MIT',
+    compatibility: 'Requires openspec CLI.',
+    metadata: { author: 'openspec', version: '1.0' },
   };
 }
 
@@ -499,26 +518,25 @@ export function getApplyChangeSkillTemplate(): SkillTemplate {
     description: 'Implement tasks from an OpenSpec change. Use when the user wants to start implementing, continue implementation, or work through tasks.',
     instructions: `Implement tasks from an OpenSpec change.
 
-**Input**: Optionally specify a change name. If omitted, MUST prompt for available changes.
+**Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
-1. **If no change name provided, prompt for selection**
+1. **Select the change**
 
-   Run \`openspec list --json\` to get available changes. Use the **AskUserQuestion tool** to let the user select.
+   If a name is provided, use it. Otherwise:
+   - Infer from conversation context if the user mentioned a change
+   - Auto-select if only one active change exists
+   - If ambiguous, run \`openspec list --json\` to get available changes and use the **AskUserQuestion tool** to let the user select
 
-   Show changes that are implementation-ready (have tasks artifact).
-   Include the schema used for each change if available.
-   Mark changes with incomplete tasks as "(In Progress)".
-
-   **IMPORTANT**: Do NOT guess or auto-select a change. Always let the user choose.
+   Always announce: "Using change: <name>" and how to override (e.g., \`/opsx:apply <other>\`).
 
 2. **Check status to understand the schema**
    \`\`\`bash
    openspec status --change "<name>" --json
    \`\`\`
    Parse the JSON to understand:
-   - \`schemaName\`: The workflow being used (e.g., "spec-driven", "tdd")
+   - \`schemaName\`: The workflow being used (e.g., "spec-driven")
    - Which artifact contains the tasks (typically "tasks" for spec-driven, check status for others)
 
 3. **Get apply instructions**
@@ -543,7 +561,6 @@ export function getApplyChangeSkillTemplate(): SkillTemplate {
    Read the files listed in \`contextFiles\` from the apply instructions output.
    The files depend on the schema being used:
    - **spec-driven**: proposal, specs, design, tasks
-   - **tdd**: spec, tests, implementation, docs
    - Other schemas: follow the contextFiles from CLI output
 
 5. **Show current progress**
@@ -643,7 +660,10 @@ What would you like to do?
 This skill supports the "actions on a change" model:
 
 - **Can be invoked anytime**: Before all artifacts are done (if tasks exist), after partial implementation, interleaved with other actions
-- **Allows artifact updates**: If implementation reveals design issues, suggest updating artifacts - not phase-locked, work fluidly`
+- **Allows artifact updates**: If implementation reveals design issues, suggest updating artifacts - not phase-locked, work fluidly`,
+    license: 'MIT',
+    compatibility: 'Requires openspec CLI.',
+    metadata: { author: 'openspec', version: '1.0' },
   };
 }
 
@@ -696,12 +716,15 @@ export function getFfChangeSkillTemplate(): SkillTemplate {
         openspec instructions <artifact-id> --change "<name>" --json
         \`\`\`
       - The instructions JSON includes:
-        - \`template\`: The template content to use
+        - \`context\`: Project background (constraints for you - do NOT include in output)
+        - \`rules\`: Artifact-specific rules (constraints for you - do NOT include in output)
+        - \`template\`: The structure to use for your output file
         - \`instruction\`: Schema-specific guidance for this artifact type
         - \`outputPath\`: Where to write the artifact
         - \`dependencies\`: Completed artifacts to read for context
       - Read any completed dependency files for context
-      - Create the artifact file following the schema's \`instruction\`
+      - Create the artifact file using \`template\` as the structure
+      - Apply \`context\` and \`rules\` as constraints - but do NOT copy them into the file
       - Show brief progress: "✓ Created <artifact-id>"
 
    b. **Continue until all \`applyRequires\` artifacts are complete**
@@ -731,14 +754,20 @@ After completing all artifacts, summarize:
 - Follow the \`instruction\` field from \`openspec instructions\` for each artifact type
 - The schema defines what each artifact should contain - follow it
 - Read dependency artifacts for context before creating new ones
-- Use the \`template\` as a starting point, filling in based on context
+- Use \`template\` as the structure for your output file - fill in its sections
+- **IMPORTANT**: \`context\` and \`rules\` are constraints for YOU, not content for the file
+  - Do NOT copy \`<context>\`, \`<rules>\`, \`<project_context>\` blocks into the artifact
+  - These guide what you write, but should never appear in the output
 
 **Guardrails**
 - Create ALL artifacts needed for implementation (as defined by schema's \`apply.requires\`)
 - Always read dependency artifacts before creating a new one
 - If context is critically unclear, ask the user - but prefer making reasonable decisions to keep momentum
 - If a change with that name already exists, suggest continuing that change instead
-- Verify each artifact file exists after writing before proceeding to next`
+- Verify each artifact file exists after writing before proceeding to next`,
+    license: 'MIT',
+    compatibility: 'Requires openspec CLI.',
+    metadata: { author: 'openspec', version: '1.0' },
   };
 }
 
@@ -754,7 +783,7 @@ export function getSyncSpecsSkillTemplate(): SkillTemplate {
 
 This is an **agent-driven** operation - you will read delta specs and directly edit main specs to apply the changes. This allows intelligent merging (e.g., adding a scenario without copying the entire requirement).
 
-**Input**: Optionally specify a change name. If omitted, MUST prompt for available changes.
+**Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
@@ -876,8 +905,559 @@ Main specs are now updated. The change remains active - archive when implementat
 - Preserve existing content not mentioned in delta
 - If something is unclear, ask for clarification
 - Show what you're changing as you go
-- The operation should be idempotent - running twice should give same result`
+- The operation should be idempotent - running twice should give same result`,
+    license: 'MIT',
+    compatibility: 'Requires openspec CLI.',
+    metadata: { author: 'openspec', version: '1.0' },
   };
+}
+
+/**
+ * Template for openspec-onboard skill
+ * Guided onboarding through the complete OpenSpec workflow
+ */
+export function getOnboardSkillTemplate(): SkillTemplate {
+  return {
+    name: 'openspec-onboard',
+    description: 'Guided onboarding for OpenSpec - walk through a complete workflow cycle with narration and real codebase work.',
+    instructions: getOnboardInstructions(),
+    license: 'MIT',
+    compatibility: 'Requires openspec CLI.',
+    metadata: { author: 'openspec', version: '1.0' },
+  };
+}
+
+/**
+ * Shared onboarding instructions used by both skill and command templates.
+ */
+function getOnboardInstructions(): string {
+  return `Guide the user through their first complete OpenSpec workflow cycle. This is a teaching experience—you'll do real work in their codebase while explaining each step.
+
+---
+
+## Preflight
+
+Before starting, check if the OpenSpec CLI is installed:
+
+\`\`\`bash
+# Unix/macOS
+openspec --version 2>&1 || echo "CLI_NOT_INSTALLED"
+# Windows (PowerShell)
+# if (Get-Command openspec -ErrorAction SilentlyContinue) { openspec --version } else { echo "CLI_NOT_INSTALLED" }
+\`\`\`
+
+**If CLI not installed:**
+> OpenSpec CLI is not installed. Install it first, then come back to \`/opsx:onboard\`.
+
+Stop here if not installed.
+
+---
+
+## Phase 1: Welcome
+
+Display:
+
+\`\`\`
+## Welcome to OpenSpec!
+
+I'll walk you through a complete change cycle—from idea to implementation—using a real task in your codebase. Along the way, you'll learn the workflow by doing it.
+
+**What we'll do:**
+1. Pick a small, real task in your codebase
+2. Explore the problem briefly
+3. Create a change (the container for our work)
+4. Build the artifacts: proposal → specs → design → tasks
+5. Implement the tasks
+6. Archive the completed change
+
+**Time:** ~15-20 minutes
+
+Let's start by finding something to work on.
+\`\`\`
+
+---
+
+## Phase 2: Task Selection
+
+### Codebase Analysis
+
+Scan the codebase for small improvement opportunities. Look for:
+
+1. **TODO/FIXME comments** - Search for \`TODO\`, \`FIXME\`, \`HACK\`, \`XXX\` in code files
+2. **Missing error handling** - \`catch\` blocks that swallow errors, risky operations without try-catch
+3. **Functions without tests** - Cross-reference \`src/\` with test directories
+4. **Type issues** - \`any\` types in TypeScript files (\`: any\`, \`as any\`)
+5. **Debug artifacts** - \`console.log\`, \`console.debug\`, \`debugger\` statements in non-debug code
+6. **Missing validation** - User input handlers without validation
+
+Also check recent git activity:
+\`\`\`bash
+# Unix/macOS
+git log --oneline -10 2>/dev/null || echo "No git history"
+# Windows (PowerShell)
+# git log --oneline -10 2>$null; if ($LASTEXITCODE -ne 0) { echo "No git history" }
+\`\`\`
+
+### Present Suggestions
+
+From your analysis, present 3-4 specific suggestions:
+
+\`\`\`
+## Task Suggestions
+
+Based on scanning your codebase, here are some good starter tasks:
+
+**1. [Most promising task]**
+   Location: \`src/path/to/file.ts:42\`
+   Scope: ~1-2 files, ~20-30 lines
+   Why it's good: [brief reason]
+
+**2. [Second task]**
+   Location: \`src/another/file.ts\`
+   Scope: ~1 file, ~15 lines
+   Why it's good: [brief reason]
+
+**3. [Third task]**
+   Location: [location]
+   Scope: [estimate]
+   Why it's good: [brief reason]
+
+**4. Something else?**
+   Tell me what you'd like to work on.
+
+Which task interests you? (Pick a number or describe your own)
+\`\`\`
+
+**If nothing found:** Fall back to asking what the user wants to build:
+> I didn't find obvious quick wins in your codebase. What's something small you've been meaning to add or fix?
+
+### Scope Guardrail
+
+If the user picks or describes something too large (major feature, multi-day work):
+
+\`\`\`
+That's a valuable task, but it's probably larger than ideal for your first OpenSpec run-through.
+
+For learning the workflow, smaller is better—it lets you see the full cycle without getting stuck in implementation details.
+
+**Options:**
+1. **Slice it smaller** - What's the smallest useful piece of [their task]? Maybe just [specific slice]?
+2. **Pick something else** - One of the other suggestions, or a different small task?
+3. **Do it anyway** - If you really want to tackle this, we can. Just know it'll take longer.
+
+What would you prefer?
+\`\`\`
+
+Let the user override if they insist—this is a soft guardrail.
+
+---
+
+## Phase 3: Explore Demo
+
+Once a task is selected, briefly demonstrate explore mode:
+
+\`\`\`
+Before we create a change, let me quickly show you **explore mode**—it's how you think through problems before committing to a direction.
+\`\`\`
+
+Spend 1-2 minutes investigating the relevant code:
+- Read the file(s) involved
+- Draw a quick ASCII diagram if it helps
+- Note any considerations
+
+\`\`\`
+## Quick Exploration
+
+[Your brief analysis—what you found, any considerations]
+
+┌─────────────────────────────────────────┐
+│   [Optional: ASCII diagram if helpful]  │
+└─────────────────────────────────────────┘
+
+Explore mode (\`/opsx:explore\`) is for this kind of thinking—investigating before implementing. You can use it anytime you need to think through a problem.
+
+Now let's create a change to hold our work.
+\`\`\`
+
+**PAUSE** - Wait for user acknowledgment before proceeding.
+
+---
+
+## Phase 4: Create the Change
+
+**EXPLAIN:**
+\`\`\`
+## Creating a Change
+
+A "change" in OpenSpec is a container for all the thinking and planning around a piece of work. It lives in \`openspec/changes/<name>/\` and holds your artifacts—proposal, specs, design, tasks.
+
+Let me create one for our task.
+\`\`\`
+
+**DO:** Create the change with a derived kebab-case name:
+\`\`\`bash
+openspec new change "<derived-name>"
+\`\`\`
+
+**SHOW:**
+\`\`\`
+Created: \`openspec/changes/<name>/\`
+
+The folder structure:
+\`\`\`
+openspec/changes/<name>/
+├── proposal.md    ← Why we're doing this (empty, we'll fill it)
+├── design.md      ← How we'll build it (empty)
+├── specs/         ← Detailed requirements (empty)
+└── tasks.md       ← Implementation checklist (empty)
+\`\`\`
+
+Now let's fill in the first artifact—the proposal.
+\`\`\`
+
+---
+
+## Phase 5: Proposal
+
+**EXPLAIN:**
+\`\`\`
+## The Proposal
+
+The proposal captures **why** we're making this change and **what** it involves at a high level. It's the "elevator pitch" for the work.
+
+I'll draft one based on our task.
+\`\`\`
+
+**DO:** Draft the proposal content (don't save yet):
+
+\`\`\`
+Here's a draft proposal:
+
+---
+
+## Why
+
+[1-2 sentences explaining the problem/opportunity]
+
+## What Changes
+
+[Bullet points of what will be different]
+
+## Capabilities
+
+### New Capabilities
+- \`<capability-name>\`: [brief description]
+
+### Modified Capabilities
+<!-- If modifying existing behavior -->
+
+## Impact
+
+- \`src/path/to/file.ts\`: [what changes]
+- [other files if applicable]
+
+---
+
+Does this capture the intent? I can adjust before we save it.
+\`\`\`
+
+**PAUSE** - Wait for user approval/feedback.
+
+After approval, save the proposal:
+\`\`\`bash
+openspec instructions proposal --change "<name>" --json
+\`\`\`
+Then write the content to \`openspec/changes/<name>/proposal.md\`.
+
+\`\`\`
+Proposal saved. This is your "why" document—you can always come back and refine it as understanding evolves.
+
+Next up: specs.
+\`\`\`
+
+---
+
+## Phase 6: Specs
+
+**EXPLAIN:**
+\`\`\`
+## Specs
+
+Specs define **what** we're building in precise, testable terms. They use a requirement/scenario format that makes expected behavior crystal clear.
+
+For a small task like this, we might only need one spec file.
+\`\`\`
+
+**DO:** Create the spec file:
+\`\`\`bash
+# Unix/macOS
+mkdir -p openspec/changes/<name>/specs/<capability-name>
+# Windows (PowerShell)
+# New-Item -ItemType Directory -Force -Path "openspec/changes/<name>/specs/<capability-name>"
+\`\`\`
+
+Draft the spec content:
+
+\`\`\`
+Here's the spec:
+
+---
+
+## ADDED Requirements
+
+### Requirement: <Name>
+
+<Description of what the system should do>
+
+#### Scenario: <Scenario name>
+
+- **WHEN** <trigger condition>
+- **THEN** <expected outcome>
+- **AND** <additional outcome if needed>
+
+---
+
+This format—WHEN/THEN/AND—makes requirements testable. You can literally read them as test cases.
+\`\`\`
+
+Save to \`openspec/changes/<name>/specs/<capability>/spec.md\`.
+
+---
+
+## Phase 7: Design
+
+**EXPLAIN:**
+\`\`\`
+## Design
+
+The design captures **how** we'll build it—technical decisions, tradeoffs, approach.
+
+For small changes, this might be brief. That's fine—not every change needs deep design discussion.
+\`\`\`
+
+**DO:** Draft design.md:
+
+\`\`\`
+Here's the design:
+
+---
+
+## Context
+
+[Brief context about the current state]
+
+## Goals / Non-Goals
+
+**Goals:**
+- [What we're trying to achieve]
+
+**Non-Goals:**
+- [What's explicitly out of scope]
+
+## Decisions
+
+### Decision 1: [Key decision]
+
+[Explanation of approach and rationale]
+
+---
+
+For a small task, this captures the key decisions without over-engineering.
+\`\`\`
+
+Save to \`openspec/changes/<name>/design.md\`.
+
+---
+
+## Phase 8: Tasks
+
+**EXPLAIN:**
+\`\`\`
+## Tasks
+
+Finally, we break the work into implementation tasks—checkboxes that drive the apply phase.
+
+These should be small, clear, and in logical order.
+\`\`\`
+
+**DO:** Generate tasks based on specs and design:
+
+\`\`\`
+Here are the implementation tasks:
+
+---
+
+## 1. [Category or file]
+
+- [ ] 1.1 [Specific task]
+- [ ] 1.2 [Specific task]
+
+## 2. Verify
+
+- [ ] 2.1 [Verification step]
+
+---
+
+Each checkbox becomes a unit of work in the apply phase. Ready to implement?
+\`\`\`
+
+**PAUSE** - Wait for user to confirm they're ready to implement.
+
+Save to \`openspec/changes/<name>/tasks.md\`.
+
+---
+
+## Phase 9: Apply (Implementation)
+
+**EXPLAIN:**
+\`\`\`
+## Implementation
+
+Now we implement each task, checking them off as we go. I'll announce each one and occasionally note how the specs/design informed the approach.
+\`\`\`
+
+**DO:** For each task:
+
+1. Announce: "Working on task N: [description]"
+2. Implement the change in the codebase
+3. Reference specs/design naturally: "The spec says X, so I'm doing Y"
+4. Mark complete in tasks.md: \`- [ ]\` → \`- [x]\`
+5. Brief status: "✓ Task N complete"
+
+Keep narration light—don't over-explain every line of code.
+
+After all tasks:
+
+\`\`\`
+## Implementation Complete
+
+All tasks done:
+- [x] Task 1
+- [x] Task 2
+- [x] ...
+
+The change is implemented! One more step—let's archive it.
+\`\`\`
+
+---
+
+## Phase 10: Archive
+
+**EXPLAIN:**
+\`\`\`
+## Archiving
+
+When a change is complete, we archive it. This moves it from \`openspec/changes/\` to \`openspec/changes/archive/YYYY-MM-DD-<name>/\`.
+
+Archived changes become your project's decision history—you can always find them later to understand why something was built a certain way.
+\`\`\`
+
+**DO:**
+\`\`\`bash
+openspec archive "<name>"
+\`\`\`
+
+**SHOW:**
+\`\`\`
+Archived to: \`openspec/changes/archive/YYYY-MM-DD-<name>/\`
+
+The change is now part of your project's history. The code is in your codebase, the decision record is preserved.
+\`\`\`
+
+---
+
+## Phase 11: Recap & Next Steps
+
+\`\`\`
+## Congratulations!
+
+You just completed a full OpenSpec cycle:
+
+1. **Explore** - Thought through the problem
+2. **New** - Created a change container
+3. **Proposal** - Captured WHY
+4. **Specs** - Defined WHAT in detail
+5. **Design** - Decided HOW
+6. **Tasks** - Broke it into steps
+7. **Apply** - Implemented the work
+8. **Archive** - Preserved the record
+
+This same rhythm works for any size change—a small fix or a major feature.
+
+---
+
+## Command Reference
+
+| Command | What it does |
+|---------|--------------|
+| \`/opsx:explore\` | Think through problems before/during work |
+| \`/opsx:new\` | Start a new change, step through artifacts |
+| \`/opsx:ff\` | Fast-forward: create all artifacts at once |
+| \`/opsx:continue\` | Continue working on an existing change |
+| \`/opsx:apply\` | Implement tasks from a change |
+| \`/opsx:verify\` | Verify implementation matches artifacts |
+| \`/opsx:archive\` | Archive a completed change |
+
+---
+
+## What's Next?
+
+Try \`/opsx:new\` or \`/opsx:ff\` on something you actually want to build. You've got the rhythm now!
+\`\`\`
+
+---
+
+## Graceful Exit Handling
+
+### User wants to stop mid-way
+
+If the user says they need to stop, want to pause, or seem disengaged:
+
+\`\`\`
+No problem! Your change is saved at \`openspec/changes/<name>/\`.
+
+To pick up where we left off later:
+- \`/opsx:continue <name>\` - Resume artifact creation
+- \`/opsx:apply <name>\` - Jump to implementation (if tasks exist)
+
+The work won't be lost. Come back whenever you're ready.
+\`\`\`
+
+Exit gracefully without pressure.
+
+### User just wants command reference
+
+If the user says they just want to see the commands or skip the tutorial:
+
+\`\`\`
+## OpenSpec Quick Reference
+
+| Command | What it does |
+|---------|--------------|
+| \`/opsx:explore\` | Think through problems (no code changes) |
+| \`/opsx:new <name>\` | Start a new change, step by step |
+| \`/opsx:ff <name>\` | Fast-forward: all artifacts at once |
+| \`/opsx:continue <name>\` | Continue an existing change |
+| \`/opsx:apply <name>\` | Implement tasks |
+| \`/opsx:verify <name>\` | Verify implementation |
+| \`/opsx:archive <name>\` | Archive when done |
+
+Try \`/opsx:new\` to start your first change, or \`/opsx:ff\` if you want to move fast.
+\`\`\`
+
+Exit gracefully.
+
+---
+
+## Guardrails
+
+- **Follow the EXPLAIN → DO → SHOW → PAUSE pattern** at key transitions (after explore, after proposal draft, after tasks, after archive)
+- **Keep narration light** during implementation—teach without lecturing
+- **Don't skip phases** even if the change is small—the goal is teaching the workflow
+- **Pause for acknowledgment** at marked points, but don't over-pause
+- **Handle exits gracefully**—never pressure the user to continue
+- **Use real codebase tasks**—don't simulate or use fake examples
+- **Adjust scope gently**—guide toward smaller tasks but respect user choice`;
 }
 
 // -----------------------------------------------------------------------------
@@ -904,6 +1484,8 @@ export function getOpsxExploreCommandTemplate(): CommandTemplate {
     tags: ['workflow', 'explore', 'experimental', 'thinking'],
     content: `Enter explore mode. Think deeply. Visualize freely. Follow the conversation wherever it goes.
 
+**IMPORTANT: Explore mode is for thinking, not implementing.** You may read files, search code, and investigate the codebase, but you must NEVER write code or implement features. If the user asks you to implement something, remind them to exit explore mode first (e.g., start a change with \`/opsx:new\` or \`/opsx:ff\`). You MAY create OpenSpec artifacts (proposals, designs, specs) if the user asks—that's capturing thinking, not implementing.
+
 **This is a stance, not a workflow.** There are no fixed steps, no required sequence, no mandatory outputs. You're a thinking partner helping the user explore.
 
 **Input**: The argument after \`/opsx:explore\` is whatever the user wants to think about. Could be:
@@ -918,6 +1500,7 @@ export function getOpsxExploreCommandTemplate(): CommandTemplate {
 ## The Stance
 
 - **Curious, not prescriptive** - Ask questions that emerge naturally, don't follow a script
+- **Open threads, not interrogations** - Surface multiple interesting directions and let the user follow what resonates. Don't funnel them through a single path of questions.
 - **Visual** - Use ASCII diagrams liberally when they'd help clarify thinking
 - **Adaptive** - Follow interesting threads, pivot when new information emerges
 - **Patient** - Don't rush to conclusions, let the shape of the problem emerge
@@ -1058,6 +1641,7 @@ When things crystallize, you might offer a summary - but it's optional. Sometime
 
 ## Guardrails
 
+- **Don't implement** - Never write code or implement features. Creating OpenSpec artifacts is fine, writing application code is not.
 - **Don't fake understanding** - If something is unclear, dig deeper
 - **Don't rush** - Discovery is thinking time, not task time
 - **Don't force structure** - Let patterns emerge naturally
@@ -1097,7 +1681,6 @@ export function getOpsxNewCommandTemplate(): CommandTemplate {
    Use the default schema (omit \`--schema\`) unless the user explicitly requests a different workflow.
 
    **Use a different schema only if the user mentions:**
-   - "tdd" or "test-driven" → use \`--schema tdd\`
    - A specific schema name → use \`--schema <name>\`
    - "show workflows" or "what workflows" → run \`openspec schemas --json\` and let them choose
 
@@ -1154,7 +1737,7 @@ export function getOpsxContinueCommandTemplate(): CommandTemplate {
     tags: ['workflow', 'artifacts', 'experimental'],
     content: `Continue working on a change by creating the next artifact.
 
-**Input**: Optionally specify \`--change <name>\` after \`/opsx:continue\`. If omitted, MUST prompt for available changes.
+**Input**: Optionally specify a change name after \`/opsx:continue\` (e.g., \`/opsx:continue add-auth\`). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
@@ -1177,7 +1760,7 @@ export function getOpsxContinueCommandTemplate(): CommandTemplate {
    openspec status --change "<name>" --json
    \`\`\`
    Parse the JSON to understand current state. The response includes:
-   - \`schemaName\`: The workflow schema being used (e.g., "spec-driven", "tdd")
+   - \`schemaName\`: The workflow schema being used (e.g., "spec-driven")
    - \`artifacts\`: Array of artifacts with their status ("done", "ready", "blocked")
    - \`isComplete\`: Boolean indicating if all artifacts are complete
 
@@ -1188,7 +1771,7 @@ export function getOpsxContinueCommandTemplate(): CommandTemplate {
    **If all artifacts are complete (\`isComplete: true\`)**:
    - Congratulate the user
    - Show final status including the schema used
-   - Suggest: "All artifacts created! You can now implement this change or archive it."
+   - Suggest: "All artifacts created! You can now implement this change with \`/opsx:apply\` or archive it with \`/opsx:archive\`."
    - STOP
 
    ---
@@ -1199,10 +1782,17 @@ export function getOpsxContinueCommandTemplate(): CommandTemplate {
      \`\`\`bash
      openspec instructions <artifact-id> --change "<name>" --json
      \`\`\`
-   - Parse the JSON to get template, dependencies, and what it unlocks
-   - **Create the artifact file** using the template as a starting point:
+   - Parse the JSON. The key fields are:
+     - \`context\`: Project background (constraints for you - do NOT include in output)
+     - \`rules\`: Artifact-specific rules (constraints for you - do NOT include in output)
+     - \`template\`: The structure to use for your output file
+     - \`instruction\`: Schema-specific guidance
+     - \`outputPath\`: Where to write the artifact
+     - \`dependencies\`: Completed artifacts to read for context
+   - **Create the artifact file**:
      - Read any completed dependency files for context
-     - Fill in the template based on context and user's goals
+     - Use \`template\` as the structure - fill in its sections
+     - Apply \`context\` and \`rules\` as constraints when writing - but do NOT copy them into the file
      - Write to the output path specified in instructions
    - Show what was created and what's now unlocked
    - STOP after creating ONE artifact
@@ -1236,15 +1826,9 @@ Common artifact patterns:
 **spec-driven schema** (proposal → specs → design → tasks):
 - **proposal.md**: Ask user about the change if not clear. Fill in Why, What Changes, Capabilities, Impact.
   - The Capabilities section is critical - each capability listed will need a spec file.
-- **specs/*.md**: Create one spec per capability listed in the proposal.
+- **specs/<capability>/spec.md**: Create one spec per capability listed in the proposal's Capabilities section (use the capability name, not the change name).
 - **design.md**: Document technical decisions, architecture, and implementation approach.
 - **tasks.md**: Break down implementation into checkboxed tasks.
-
-**tdd schema** (spec → tests → implementation → docs):
-- **spec.md**: Feature specification defining what to build.
-- **tests/*.test.ts**: Write tests BEFORE implementation (TDD red phase).
-- **src/*.ts**: Implement to make tests pass (TDD green phase).
-- **docs/*.md**: Document the implemented feature.
 
 For other schemas, follow the \`instruction\` field from the CLI output.
 
@@ -1254,7 +1838,10 @@ For other schemas, follow the \`instruction\` field from the CLI output.
 - Never skip artifacts or create out of order
 - If context is unclear, ask the user before creating
 - Verify the artifact file exists after writing before marking progress
-- Use the schema's artifact sequence, don't assume specific artifact names`
+- Use the schema's artifact sequence, don't assume specific artifact names
+- **IMPORTANT**: \`context\` and \`rules\` are constraints for YOU, not content for the file
+  - Do NOT copy \`<context>\`, \`<rules>\`, \`<project_context>\` blocks into the artifact
+  - These guide what you write, but should never appear in the output`
   };
 }
 
@@ -1269,26 +1856,25 @@ export function getOpsxApplyCommandTemplate(): CommandTemplate {
     tags: ['workflow', 'artifacts', 'experimental'],
     content: `Implement tasks from an OpenSpec change.
 
-**Input**: Optionally specify \`--change <name>\` after \`/opsx:apply\`. If omitted, MUST prompt for available changes.
+**Input**: Optionally specify a change name (e.g., \`/opsx:apply add-auth\`). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
-1. **If no change name provided, prompt for selection**
+1. **Select the change**
 
-   Run \`openspec list --json\` to get available changes. Use the **AskUserQuestion tool** to let the user select.
+   If a name is provided, use it. Otherwise:
+   - Infer from conversation context if the user mentioned a change
+   - Auto-select if only one active change exists
+   - If ambiguous, run \`openspec list --json\` to get available changes and use the **AskUserQuestion tool** to let the user select
 
-   Show changes that are implementation-ready (have tasks artifact).
-   Include the schema used for each change if available.
-   Mark changes with incomplete tasks as "(In Progress)".
-
-   **IMPORTANT**: Do NOT guess or auto-select a change. Always let the user choose.
+   Always announce: "Using change: <name>" and how to override (e.g., \`/opsx:apply <other>\`).
 
 2. **Check status to understand the schema**
    \`\`\`bash
    openspec status --change "<name>" --json
    \`\`\`
    Parse the JSON to understand:
-   - \`schemaName\`: The workflow being used (e.g., "spec-driven", "tdd")
+   - \`schemaName\`: The workflow being used (e.g., "spec-driven")
    - Which artifact contains the tasks (typically "tasks" for spec-driven, check status for others)
 
 3. **Get apply instructions**
@@ -1313,7 +1899,6 @@ export function getOpsxApplyCommandTemplate(): CommandTemplate {
    Read the files listed in \`contextFiles\` from the apply instructions output.
    The files depend on the schema being used:
    - **spec-driven**: proposal, specs, design, tasks
-   - **tdd**: spec, tests, implementation, docs
    - Other schemas: follow the contextFiles from CLI output
 
 5. **Show current progress**
@@ -1375,7 +1960,7 @@ Working on task 4/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! Ready to archive this change.
+All tasks complete! You can archive this change with \`/opsx:archive\`.
 \`\`\`
 
 **Output On Pause (Issue Encountered)**
@@ -1468,12 +2053,15 @@ export function getOpsxFfCommandTemplate(): CommandTemplate {
         openspec instructions <artifact-id> --change "<name>" --json
         \`\`\`
       - The instructions JSON includes:
-        - \`template\`: The template content to use
+        - \`context\`: Project background (constraints for you - do NOT include in output)
+        - \`rules\`: Artifact-specific rules (constraints for you - do NOT include in output)
+        - \`template\`: The structure to use for your output file
         - \`instruction\`: Schema-specific guidance for this artifact type
         - \`outputPath\`: Where to write the artifact
         - \`dependencies\`: Completed artifacts to read for context
       - Read any completed dependency files for context
-      - Create the artifact file following the schema's \`instruction\`
+      - Create the artifact file using \`template\` as the structure
+      - Apply \`context\` and \`rules\` as constraints - but do NOT copy them into the file
       - Show brief progress: "✓ Created <artifact-id>"
 
    b. **Continue until all \`applyRequires\` artifacts are complete**
@@ -1524,7 +2112,7 @@ export function getArchiveChangeSkillTemplate(): SkillTemplate {
     description: 'Archive a completed change in the experimental workflow. Use when the user wants to finalize and archive a change after implementation is complete.',
     instructions: `Archive a completed change in the experimental workflow.
 
-**Input**: Optionally specify a change name. If omitted, MUST prompt for available changes.
+**Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
@@ -1563,38 +2151,20 @@ export function getArchiveChangeSkillTemplate(): SkillTemplate {
 
    **If no tasks file exists:** Proceed without task-related warning.
 
-4. **Check if delta specs need syncing**
+4. **Assess delta spec sync state**
 
-   Check if \`specs/\` directory exists in the change with spec files.
+   Check for delta specs at \`openspec/changes/<name>/specs/\`. If none exist, proceed without sync prompt.
 
-   **If delta specs exist, perform a quick sync check:**
+   **If delta specs exist:**
+   - Compare each delta spec with its corresponding main spec at \`openspec/specs/<capability>/spec.md\`
+   - Determine what changes would be applied (adds, modifications, removals, renames)
+   - Show a combined summary before prompting
 
-   a. **For each delta spec** at \`openspec/changes/<name>/specs/<capability>/spec.md\`:
-      - Extract requirement names (lines matching \`### Requirement: <name>\`)
-      - Note which sections exist (ADDED, MODIFIED, REMOVED)
+   **Prompt options:**
+   - If changes needed: "Sync now (recommended)", "Archive without syncing"
+   - If already synced: "Archive now", "Sync anyway", "Cancel"
 
-   b. **Check corresponding main spec** at \`openspec/specs/<capability>/spec.md\`:
-      - If main spec doesn't exist → needs sync
-      - If main spec exists, check if ADDED requirement names appear in it
-      - If any ADDED requirements are missing from main spec → needs sync
-
-   c. **Report findings:**
-
-      **If sync needed:**
-      \`\`\`
-      ⚠️ Delta specs may not be synced:
-      - specs/auth/spec.md → Main spec missing requirement "Token Refresh"
-      - specs/api/spec.md → Main spec doesn't exist yet
-
-      Would you like to sync now before archiving?
-      \`\`\`
-      - Use **AskUserQuestion tool** with options: "Sync now", "Archive without syncing"
-      - If user chooses sync, execute /opsx:sync logic (use the openspec-sync-specs skill)
-
-      **If already synced (all requirements found):**
-      - Proceed without prompting (specs appear to be in sync)
-
-   **If no delta specs exist:** Proceed without sync-related checks.
+   If user chooses sync, use Task tool (subagent_type: "general-purpose", prompt: "Use Skill tool to invoke openspec-sync-specs for change '<name>'. Delta spec analysis: <include the analyzed delta spec summary>"). Proceed to archive regardless of choice.
 
 5. **Perform the archive**
 
@@ -1630,7 +2200,7 @@ export function getArchiveChangeSkillTemplate(): SkillTemplate {
 **Change:** <change-name>
 **Schema:** <schema-name>
 **Archived to:** openspec/changes/archive/YYYY-MM-DD-<name>/
-**Specs:** ✓ Synced to main specs (or "No delta specs" or "⚠️ Not synced")
+**Specs:** ✓ Synced to main specs (or "No delta specs" or "Sync skipped")
 
 All artifacts complete. All tasks complete.
 \`\`\`
@@ -1642,7 +2212,259 @@ All artifacts complete. All tasks complete.
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
 - If sync is requested, use openspec-sync-specs approach (agent-driven)
-- Quick sync check: look for requirement names in delta specs, verify they exist in main specs`
+- If delta specs exist, always run the sync assessment and show the combined summary before prompting`,
+    license: 'MIT',
+    compatibility: 'Requires openspec CLI.',
+    metadata: { author: 'openspec', version: '1.0' },
+  };
+}
+
+/**
+ * Template for openspec-bulk-archive-change skill
+ * For archiving multiple completed changes at once
+ */
+export function getBulkArchiveChangeSkillTemplate(): SkillTemplate {
+  return {
+    name: 'openspec-bulk-archive-change',
+    description: 'Archive multiple completed changes at once. Use when archiving several parallel changes.',
+    instructions: `Archive multiple completed changes in a single operation.
+
+This skill allows you to batch-archive changes, handling spec conflicts intelligently by checking the codebase to determine what's actually implemented.
+
+**Input**: None required (prompts for selection)
+
+**Steps**
+
+1. **Get active changes**
+
+   Run \`openspec list --json\` to get all active changes.
+
+   If no active changes exist, inform user and stop.
+
+2. **Prompt for change selection**
+
+   Use **AskUserQuestion tool** with multi-select to let user choose changes:
+   - Show each change with its schema
+   - Include an option for "All changes"
+   - Allow any number of selections (1+ works, 2+ is the typical use case)
+
+   **IMPORTANT**: Do NOT auto-select. Always let the user choose.
+
+3. **Batch validation - gather status for all selected changes**
+
+   For each selected change, collect:
+
+   a. **Artifact status** - Run \`openspec status --change "<name>" --json\`
+      - Parse \`schemaName\` and \`artifacts\` list
+      - Note which artifacts are \`done\` vs other states
+
+   b. **Task completion** - Read \`openspec/changes/<name>/tasks.md\`
+      - Count \`- [ ]\` (incomplete) vs \`- [x]\` (complete)
+      - If no tasks file exists, note as "No tasks"
+
+   c. **Delta specs** - Check \`openspec/changes/<name>/specs/\` directory
+      - List which capability specs exist
+      - For each, extract requirement names (lines matching \`### Requirement: <name>\`)
+
+4. **Detect spec conflicts**
+
+   Build a map of \`capability -> [changes that touch it]\`:
+
+   \`\`\`
+   auth -> [change-a, change-b]  <- CONFLICT (2+ changes)
+   api  -> [change-c]            <- OK (only 1 change)
+   \`\`\`
+
+   A conflict exists when 2+ selected changes have delta specs for the same capability.
+
+5. **Resolve conflicts agentically**
+
+   **For each conflict**, investigate the codebase:
+
+   a. **Read the delta specs** from each conflicting change to understand what each claims to add/modify
+
+   b. **Search the codebase** for implementation evidence:
+      - Look for code implementing requirements from each delta spec
+      - Check for related files, functions, or tests
+
+   c. **Determine resolution**:
+      - If only one change is actually implemented -> sync that one's specs
+      - If both implemented -> apply in chronological order (older first, newer overwrites)
+      - If neither implemented -> skip spec sync, warn user
+
+   d. **Record resolution** for each conflict:
+      - Which change's specs to apply
+      - In what order (if both)
+      - Rationale (what was found in codebase)
+
+6. **Show consolidated status table**
+
+   Display a table summarizing all changes:
+
+   \`\`\`
+   | Change               | Artifacts | Tasks | Specs   | Conflicts | Status |
+   |---------------------|-----------|-------|---------|-----------|--------|
+   | schema-management   | Done      | 5/5   | 2 delta | None      | Ready  |
+   | project-config      | Done      | 3/3   | 1 delta | None      | Ready  |
+   | add-oauth           | Done      | 4/4   | 1 delta | auth (!)  | Ready* |
+   | add-verify-skill    | 1 left    | 2/5   | None    | None      | Warn   |
+   \`\`\`
+
+   For conflicts, show the resolution:
+   \`\`\`
+   * Conflict resolution:
+     - auth spec: Will apply add-oauth then add-jwt (both implemented, chronological order)
+   \`\`\`
+
+   For incomplete changes, show warnings:
+   \`\`\`
+   Warnings:
+   - add-verify-skill: 1 incomplete artifact, 3 incomplete tasks
+   \`\`\`
+
+7. **Confirm batch operation**
+
+   Use **AskUserQuestion tool** with a single confirmation:
+
+   - "Archive N changes?" with options based on status
+   - Options might include:
+     - "Archive all N changes"
+     - "Archive only N ready changes (skip incomplete)"
+     - "Cancel"
+
+   If there are incomplete changes, make clear they'll be archived with warnings.
+
+8. **Execute archive for each confirmed change**
+
+   Process changes in the determined order (respecting conflict resolution):
+
+   a. **Sync specs** if delta specs exist:
+      - Use the openspec-sync-specs approach (agent-driven intelligent merge)
+      - For conflicts, apply in resolved order
+      - Track if sync was done
+
+   b. **Perform the archive**:
+      \`\`\`bash
+      mkdir -p openspec/changes/archive
+      mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
+      \`\`\`
+
+   c. **Track outcome** for each change:
+      - Success: archived successfully
+      - Failed: error during archive (record error)
+      - Skipped: user chose not to archive (if applicable)
+
+9. **Display summary**
+
+   Show final results:
+
+   \`\`\`
+   ## Bulk Archive Complete
+
+   Archived 3 changes:
+   - schema-management-cli -> archive/2026-01-19-schema-management-cli/
+   - project-config -> archive/2026-01-19-project-config/
+   - add-oauth -> archive/2026-01-19-add-oauth/
+
+   Skipped 1 change:
+   - add-verify-skill (user chose not to archive incomplete)
+
+   Spec sync summary:
+   - 4 delta specs synced to main specs
+   - 1 conflict resolved (auth: applied both in chronological order)
+   \`\`\`
+
+   If any failures:
+   \`\`\`
+   Failed 1 change:
+   - some-change: Archive directory already exists
+   \`\`\`
+
+**Conflict Resolution Examples**
+
+Example 1: Only one implemented
+\`\`\`
+Conflict: specs/auth/spec.md touched by [add-oauth, add-jwt]
+
+Checking add-oauth:
+- Delta adds "OAuth Provider Integration" requirement
+- Searching codebase... found src/auth/oauth.ts implementing OAuth flow
+
+Checking add-jwt:
+- Delta adds "JWT Token Handling" requirement
+- Searching codebase... no JWT implementation found
+
+Resolution: Only add-oauth is implemented. Will sync add-oauth specs only.
+\`\`\`
+
+Example 2: Both implemented
+\`\`\`
+Conflict: specs/api/spec.md touched by [add-rest-api, add-graphql]
+
+Checking add-rest-api (created 2026-01-10):
+- Delta adds "REST Endpoints" requirement
+- Searching codebase... found src/api/rest.ts
+
+Checking add-graphql (created 2026-01-15):
+- Delta adds "GraphQL Schema" requirement
+- Searching codebase... found src/api/graphql.ts
+
+Resolution: Both implemented. Will apply add-rest-api specs first,
+then add-graphql specs (chronological order, newer takes precedence).
+\`\`\`
+
+**Output On Success**
+
+\`\`\`
+## Bulk Archive Complete
+
+Archived N changes:
+- <change-1> -> archive/YYYY-MM-DD-<change-1>/
+- <change-2> -> archive/YYYY-MM-DD-<change-2>/
+
+Spec sync summary:
+- N delta specs synced to main specs
+- No conflicts (or: M conflicts resolved)
+\`\`\`
+
+**Output On Partial Success**
+
+\`\`\`
+## Bulk Archive Complete (partial)
+
+Archived N changes:
+- <change-1> -> archive/YYYY-MM-DD-<change-1>/
+
+Skipped M changes:
+- <change-2> (user chose not to archive incomplete)
+
+Failed K changes:
+- <change-3>: Archive directory already exists
+\`\`\`
+
+**Output When No Changes**
+
+\`\`\`
+## No Changes to Archive
+
+No active changes found. Use \`/opsx:new\` to create a new change.
+\`\`\`
+
+**Guardrails**
+- Allow any number of changes (1+ is fine, 2+ is the typical use case)
+- Always prompt for selection, never auto-select
+- Detect spec conflicts early and resolve by checking codebase
+- When both changes are implemented, apply specs in chronological order
+- Skip spec sync only when implementation is missing (warn user)
+- Show clear per-change status before confirming
+- Use single confirmation for entire batch
+- Track and report all outcomes (success/skip/fail)
+- Preserve .openspec.yaml when moving to archive
+- Archive directory target uses current date: YYYY-MM-DD-<name>
+- If archive target exists, fail that change but continue with others`,
+    license: 'MIT',
+    compatibility: 'Requires openspec CLI.',
+    metadata: { author: 'openspec', version: '1.0' },
   };
 }
 
@@ -1659,7 +2481,7 @@ export function getOpsxSyncCommandTemplate(): CommandTemplate {
 
 This is an **agent-driven** operation - you will read delta specs and directly edit main specs to apply the changes. This allows intelligent merging (e.g., adding a scenario without copying the entire requirement).
 
-**Input**: Optionally specify \`--change <name>\` after \`/opsx:sync\`. If omitted, MUST prompt for available changes.
+**Input**: Optionally specify a change name after \`/opsx:sync\` (e.g., \`/opsx:sync add-auth\`). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
@@ -1795,7 +2617,7 @@ export function getVerifyChangeSkillTemplate(): SkillTemplate {
     description: 'Verify implementation matches change artifacts. Use when the user wants to validate that implementation is complete, correct, and coherent before archiving.',
     instructions: `Verify that an implementation matches the change artifacts (specs, tasks, design).
 
-**Input**: Optionally specify a change name. If omitted, MUST prompt for available changes.
+**Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
@@ -1814,7 +2636,7 @@ export function getVerifyChangeSkillTemplate(): SkillTemplate {
    openspec status --change "<name>" --json
    \`\`\`
    Parse the JSON to understand:
-   - \`schemaName\`: The workflow being used (e.g., "spec-driven", "tdd")
+   - \`schemaName\`: The workflow being used (e.g., "spec-driven")
    - Which artifacts exist for this change
 
 3. **Get the change directory and load artifacts**
@@ -1949,7 +2771,10 @@ Use clear markdown with:
 - Grouped lists for issues (CRITICAL/WARNING/SUGGESTION)
 - Code references in format: \`file.ts:123\`
 - Specific, actionable recommendations
-- No vague suggestions like "consider reviewing"`
+- No vague suggestions like "consider reviewing"`,
+    license: 'MIT',
+    compatibility: 'Requires openspec CLI.',
+    metadata: { author: 'openspec', version: '1.0' },
   };
 }
 
@@ -1964,7 +2789,7 @@ export function getOpsxArchiveCommandTemplate(): CommandTemplate {
     tags: ['workflow', 'archive', 'experimental'],
     content: `Archive a completed change in the experimental workflow.
 
-**Input**: Optionally specify \`--change <name>\` after \`/opsx:archive\`. If omitted, MUST prompt for available changes.
+**Input**: Optionally specify a change name after \`/opsx:archive\` (e.g., \`/opsx:archive add-auth\`). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
@@ -2003,38 +2828,20 @@ export function getOpsxArchiveCommandTemplate(): CommandTemplate {
 
    **If no tasks file exists:** Proceed without task-related warning.
 
-4. **Check if delta specs need syncing**
+4. **Assess delta spec sync state**
 
-   Check if \`specs/\` directory exists in the change with spec files.
+   Check for delta specs at \`openspec/changes/<name>/specs/\`. If none exist, proceed without sync prompt.
 
-   **If delta specs exist, perform a quick sync check:**
+   **If delta specs exist:**
+   - Compare each delta spec with its corresponding main spec at \`openspec/specs/<capability>/spec.md\`
+   - Determine what changes would be applied (adds, modifications, removals, renames)
+   - Show a combined summary before prompting
 
-   a. **For each delta spec** at \`openspec/changes/<name>/specs/<capability>/spec.md\`:
-      - Extract requirement names (lines matching \`### Requirement: <name>\`)
-      - Note which sections exist (ADDED, MODIFIED, REMOVED)
+   **Prompt options:**
+   - If changes needed: "Sync now (recommended)", "Archive without syncing"
+   - If already synced: "Archive now", "Sync anyway", "Cancel"
 
-   b. **Check corresponding main spec** at \`openspec/specs/<capability>/spec.md\`:
-      - If main spec doesn't exist → needs sync
-      - If main spec exists, check if ADDED requirement names appear in it
-      - If any ADDED requirements are missing from main spec → needs sync
-
-   c. **Report findings:**
-
-      **If sync needed:**
-      \`\`\`
-      ⚠️ Delta specs may not be synced:
-      - specs/auth/spec.md → Main spec missing requirement "Token Refresh"
-      - specs/api/spec.md → Main spec doesn't exist yet
-
-      Would you like to sync now before archiving?
-      \`\`\`
-      - Use **AskUserQuestion tool** with options: "Sync now", "Archive without syncing"
-      - If user chooses sync, execute \`/opsx:sync\` logic
-
-      **If already synced (all requirements found):**
-      - Proceed without prompting (specs appear to be in sync)
-
-   **If no delta specs exist:** Proceed without sync-related checks.
+   If user chooses sync, use Task tool (subagent_type: "general-purpose", prompt: "Use Skill tool to invoke openspec-sync-specs for change '<name>'. Delta spec analysis: <include the analyzed delta spec summary>"). Proceed to archive regardless of choice.
 
 5. **Perform the archive**
 
@@ -2059,7 +2866,7 @@ export function getOpsxArchiveCommandTemplate(): CommandTemplate {
    - Change name
    - Schema that was used
    - Archive location
-   - Spec sync status (synced / not synced / no delta specs)
+   - Spec sync status (synced / sync skipped / no delta specs)
    - Note about any warnings (incomplete artifacts/tasks)
 
 **Output On Success**
@@ -2096,12 +2903,12 @@ All artifacts complete. All tasks complete.
 **Change:** <change-name>
 **Schema:** <schema-name>
 **Archived to:** openspec/changes/archive/YYYY-MM-DD-<name>/
-**Specs:** ⚠️ Not synced
+**Specs:** Sync skipped (user chose to skip)
 
 **Warnings:**
 - Archived with 2 incomplete artifacts
 - Archived with 3 incomplete tasks
-- Delta specs were not synced (user chose to skip)
+- Delta spec sync was skipped (user chose to skip)
 
 Review the archive if this was not intentional.
 \`\`\`
@@ -2127,9 +2934,270 @@ Target archive directory already exists.
 - Use artifact graph (openspec status --json) for completion checking
 - Don't block archive on warnings - just inform and confirm
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
-- Quick sync check: look for requirement names in delta specs, verify they exist in main specs
 - Show clear summary of what happened
-- If sync is requested, use /opsx:sync approach (agent-driven)`
+- If sync is requested, use the Skill tool to invoke \`openspec-sync-specs\` (agent-driven)
+- If delta specs exist, always run the sync assessment and show the combined summary before prompting`
+  };
+}
+
+/**
+ * Template for /opsx:onboard slash command
+ * Guided onboarding through the complete OpenSpec workflow
+ */
+export function getOpsxOnboardCommandTemplate(): CommandTemplate {
+  return {
+    name: 'OPSX: Onboard',
+    description: 'Guided onboarding - walk through a complete OpenSpec workflow cycle with narration',
+    category: 'Workflow',
+    tags: ['workflow', 'onboarding', 'tutorial', 'learning'],
+    content: getOnboardInstructions(),
+  };
+}
+
+/**
+ * Template for /opsx:bulk-archive slash command
+ */
+export function getOpsxBulkArchiveCommandTemplate(): CommandTemplate {
+  return {
+    name: 'OPSX: Bulk Archive',
+    description: 'Archive multiple completed changes at once',
+    category: 'Workflow',
+    tags: ['workflow', 'archive', 'experimental', 'bulk'],
+    content: `Archive multiple completed changes in a single operation.
+
+This skill allows you to batch-archive changes, handling spec conflicts intelligently by checking the codebase to determine what's actually implemented.
+
+**Input**: None required (prompts for selection)
+
+**Steps**
+
+1. **Get active changes**
+
+   Run \`openspec list --json\` to get all active changes.
+
+   If no active changes exist, inform user and stop.
+
+2. **Prompt for change selection**
+
+   Use **AskUserQuestion tool** with multi-select to let user choose changes:
+   - Show each change with its schema
+   - Include an option for "All changes"
+   - Allow any number of selections (1+ works, 2+ is the typical use case)
+
+   **IMPORTANT**: Do NOT auto-select. Always let the user choose.
+
+3. **Batch validation - gather status for all selected changes**
+
+   For each selected change, collect:
+
+   a. **Artifact status** - Run \`openspec status --change "<name>" --json\`
+      - Parse \`schemaName\` and \`artifacts\` list
+      - Note which artifacts are \`done\` vs other states
+
+   b. **Task completion** - Read \`openspec/changes/<name>/tasks.md\`
+      - Count \`- [ ]\` (incomplete) vs \`- [x]\` (complete)
+      - If no tasks file exists, note as "No tasks"
+
+   c. **Delta specs** - Check \`openspec/changes/<name>/specs/\` directory
+      - List which capability specs exist
+      - For each, extract requirement names (lines matching \`### Requirement: <name>\`)
+
+4. **Detect spec conflicts**
+
+   Build a map of \`capability -> [changes that touch it]\`:
+
+   \`\`\`
+   auth -> [change-a, change-b]  <- CONFLICT (2+ changes)
+   api  -> [change-c]            <- OK (only 1 change)
+   \`\`\`
+
+   A conflict exists when 2+ selected changes have delta specs for the same capability.
+
+5. **Resolve conflicts agentically**
+
+   **For each conflict**, investigate the codebase:
+
+   a. **Read the delta specs** from each conflicting change to understand what each claims to add/modify
+
+   b. **Search the codebase** for implementation evidence:
+      - Look for code implementing requirements from each delta spec
+      - Check for related files, functions, or tests
+
+   c. **Determine resolution**:
+      - If only one change is actually implemented -> sync that one's specs
+      - If both implemented -> apply in chronological order (older first, newer overwrites)
+      - If neither implemented -> skip spec sync, warn user
+
+   d. **Record resolution** for each conflict:
+      - Which change's specs to apply
+      - In what order (if both)
+      - Rationale (what was found in codebase)
+
+6. **Show consolidated status table**
+
+   Display a table summarizing all changes:
+
+   \`\`\`
+   | Change               | Artifacts | Tasks | Specs   | Conflicts | Status |
+   |---------------------|-----------|-------|---------|-----------|--------|
+   | schema-management   | Done      | 5/5   | 2 delta | None      | Ready  |
+   | project-config      | Done      | 3/3   | 1 delta | None      | Ready  |
+   | add-oauth           | Done      | 4/4   | 1 delta | auth (!)  | Ready* |
+   | add-verify-skill    | 1 left    | 2/5   | None    | None      | Warn   |
+   \`\`\`
+
+   For conflicts, show the resolution:
+   \`\`\`
+   * Conflict resolution:
+     - auth spec: Will apply add-oauth then add-jwt (both implemented, chronological order)
+   \`\`\`
+
+   For incomplete changes, show warnings:
+   \`\`\`
+   Warnings:
+   - add-verify-skill: 1 incomplete artifact, 3 incomplete tasks
+   \`\`\`
+
+7. **Confirm batch operation**
+
+   Use **AskUserQuestion tool** with a single confirmation:
+
+   - "Archive N changes?" with options based on status
+   - Options might include:
+     - "Archive all N changes"
+     - "Archive only N ready changes (skip incomplete)"
+     - "Cancel"
+
+   If there are incomplete changes, make clear they'll be archived with warnings.
+
+8. **Execute archive for each confirmed change**
+
+   Process changes in the determined order (respecting conflict resolution):
+
+   a. **Sync specs** if delta specs exist:
+      - Use the openspec-sync-specs approach (agent-driven intelligent merge)
+      - For conflicts, apply in resolved order
+      - Track if sync was done
+
+   b. **Perform the archive**:
+      \`\`\`bash
+      mkdir -p openspec/changes/archive
+      mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
+      \`\`\`
+
+   c. **Track outcome** for each change:
+      - Success: archived successfully
+      - Failed: error during archive (record error)
+      - Skipped: user chose not to archive (if applicable)
+
+9. **Display summary**
+
+   Show final results:
+
+   \`\`\`
+   ## Bulk Archive Complete
+
+   Archived 3 changes:
+   - schema-management-cli -> archive/2026-01-19-schema-management-cli/
+   - project-config -> archive/2026-01-19-project-config/
+   - add-oauth -> archive/2026-01-19-add-oauth/
+
+   Skipped 1 change:
+   - add-verify-skill (user chose not to archive incomplete)
+
+   Spec sync summary:
+   - 4 delta specs synced to main specs
+   - 1 conflict resolved (auth: applied both in chronological order)
+   \`\`\`
+
+   If any failures:
+   \`\`\`
+   Failed 1 change:
+   - some-change: Archive directory already exists
+   \`\`\`
+
+**Conflict Resolution Examples**
+
+Example 1: Only one implemented
+\`\`\`
+Conflict: specs/auth/spec.md touched by [add-oauth, add-jwt]
+
+Checking add-oauth:
+- Delta adds "OAuth Provider Integration" requirement
+- Searching codebase... found src/auth/oauth.ts implementing OAuth flow
+
+Checking add-jwt:
+- Delta adds "JWT Token Handling" requirement
+- Searching codebase... no JWT implementation found
+
+Resolution: Only add-oauth is implemented. Will sync add-oauth specs only.
+\`\`\`
+
+Example 2: Both implemented
+\`\`\`
+Conflict: specs/api/spec.md touched by [add-rest-api, add-graphql]
+
+Checking add-rest-api (created 2026-01-10):
+- Delta adds "REST Endpoints" requirement
+- Searching codebase... found src/api/rest.ts
+
+Checking add-graphql (created 2026-01-15):
+- Delta adds "GraphQL Schema" requirement
+- Searching codebase... found src/api/graphql.ts
+
+Resolution: Both implemented. Will apply add-rest-api specs first,
+then add-graphql specs (chronological order, newer takes precedence).
+\`\`\`
+
+**Output On Success**
+
+\`\`\`
+## Bulk Archive Complete
+
+Archived N changes:
+- <change-1> -> archive/YYYY-MM-DD-<change-1>/
+- <change-2> -> archive/YYYY-MM-DD-<change-2>/
+
+Spec sync summary:
+- N delta specs synced to main specs
+- No conflicts (or: M conflicts resolved)
+\`\`\`
+
+**Output On Partial Success**
+
+\`\`\`
+## Bulk Archive Complete (partial)
+
+Archived N changes:
+- <change-1> -> archive/YYYY-MM-DD-<change-1>/
+
+Skipped M changes:
+- <change-2> (user chose not to archive incomplete)
+
+Failed K changes:
+- <change-3>: Archive directory already exists
+\`\`\`
+
+**Output When No Changes**
+
+\`\`\`
+## No Changes to Archive
+
+No active changes found. Use \`/opsx:new\` to create a new change.
+\`\`\`
+
+**Guardrails**
+- Allow any number of changes (1+ is fine, 2+ is the typical use case)
+- Always prompt for selection, never auto-select
+- Detect spec conflicts early and resolve by checking codebase
+- When both changes are implemented, apply specs in chronological order
+- Skip spec sync only when implementation is missing (warn user)
+- Show clear per-change status before confirming
+- Use single confirmation for entire batch
+- Track and report all outcomes (success/skip/fail)
+- Preserve .openspec.yaml when moving to archive
+- Archive directory target uses current date: YYYY-MM-DD-<name>
+- If archive target exists, fail that change but continue with others`
   };
 }
 
@@ -2144,7 +3212,7 @@ export function getOpsxVerifyCommandTemplate(): CommandTemplate {
     tags: ['workflow', 'verify', 'experimental'],
     content: `Verify that an implementation matches the change artifacts (specs, tasks, design).
 
-**Input**: Optionally specify \`--change <name>\` after \`/opsx:verify\`. If omitted, MUST prompt for available changes.
+**Input**: Optionally specify a change name after \`/opsx:verify\` (e.g., \`/opsx:verify add-auth\`). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
@@ -2163,7 +3231,7 @@ export function getOpsxVerifyCommandTemplate(): CommandTemplate {
    openspec status --change "<name>" --json
    \`\`\`
    Parse the JSON to understand:
-   - \`schemaName\`: The workflow being used (e.g., "spec-driven", "tdd")
+   - \`schemaName\`: The workflow being used (e.g., "spec-driven")
    - Which artifacts exist for this change
 
 3. **Get the change directory and load artifacts**
